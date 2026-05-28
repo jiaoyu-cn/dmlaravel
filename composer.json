@@ -1,10 +1,10 @@
 {
-    "name": "damengdb/dmlaravel",
+    "name": "githen/dmlaravel",
     "description": "php_dm dm8",
     "license": "MIT",
     "support": {
-        "issues": "https://github.com/DamengDB/dmlaravel/issues",
-        "source": "https://github.com/DamengDB/dmlaravel"
+        "issues": "https://github.com/jiaoyu-cn/dmlaravel/issues",
+        "source": "https://github.com/jiaoyu-cn/dmlaravel"
     },
     "authors": [
         {
@@ -13,14 +13,14 @@
         }
     ],
     "require": {
-        "php": "^8.2",
+        "php": "^7.3",
         "ext-pdo": "*",
-        "illuminate/database": "^11",
-        "illuminate/pagination": "^11"
+        "illuminate/database": "^6.0|^11.0",
+        "illuminate/pagination": "^6.0|^11.0"
     },
     "require-dev": {
-        "mockery/mockery": "^1.6",
-        "phpunit/phpunit": "^10.5|^11.0"
+        "mockery/mockery": "^1.0",
+        "phpunit/phpunit": "^8.0"
     },
     "autoload": {
         "files": [
