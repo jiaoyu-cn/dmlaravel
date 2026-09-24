@@ -100,8 +100,6 @@ class DmBuilder extends Builder
      */
     public function toRawSql()
     {
-        // set the connection, grammar->escape() will use the connection.
-        $this->grammar->setConnection($this->connection);
         return $this->grammar->substituteBindingsIntoRawSql(
             $this->toSql(), $this->connection->prepareBindings($this->getBindings())
         );

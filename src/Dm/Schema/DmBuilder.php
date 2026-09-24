@@ -8,7 +8,8 @@ use Illuminate\Database\Schema\Builder;
 
 class DmBuilder extends Builder
 {
-    public static ?int $defaultTimePrecision = null;
+    // 注：不要声明 $defaultTimePrecision —— Laravel 12 父类已定义
+    // public static ?int $defaultTimePrecision（默认 0）并配合静态方法使用，重复声明没有意义。
 
     /**
      * Create a new command set with a Closure.
@@ -17,12 +18,9 @@ class DmBuilder extends Builder
      * @param  Closure  $callback
      * @return \Illuminate\Database\Schema\Blueprint
      */
-    protected function createBlueprint($table, Closure $callback = null)
+    protected function createBlueprint($table, ?Closure $callback = null)
     {
-        $blueprint = new DmBlueprint($table, $callback);
-        $blueprint->setTablePrefix($this->connection->getTablePrefix());
-
-        return $blueprint;
+        return new DmBlueprint($this->connection, $table, $callback);
     }
 
     /**
@@ -223,21 +221,20 @@ class DmBuilder extends Builder
      *
      * @return array
      */
-    public function getTables()
+    public function getTables($schema = null)
     {
-        $schema = $this->connection->getSchema();
-        $schemaId = $this->getSchemaId($schema)[0];
-        if (isset($schemaId)) {
-            $results = $this->connection->getPostProcessor()->processTables(
-                $this->connection->selectFromWriteConnection(
-                    $this->grammar->compileTables($schema, $schemaId)
-                )
-            );
-        } else {
-            $results = [];
+        $schema = $schema ?: $this->connection->getSchema();
+        $schemaId = $this->getSchemaId($schema)[0] ?? null;
+
+        if (! isset($schemaId)) {
+            return [];
         }
 
-        return $results;
+        return $this->connection->getPostProcessor()->processTables(
+            $this->connection->selectFromWriteConnection(
+                $this->grammar->compileTables($schema, $schemaId)
+            )
+        );
     }
 
     /**
@@ -245,11 +242,13 @@ class DmBuilder extends Builder
      *
      * @return array
      */
-    public function getViews()
+    public function getViews($schema = null)
     {
+        $schema = $schema ?: $this->connection->getSchema();
+
         return $this->connection->getPostProcessor()->processViews(
             $this->connection->selectFromWriteConnection(
-                $this->grammar->compileViews($this->connection->getSchema())
+                $this->grammar->compileViews($schema)
             )
         );
     }
@@ -260,7 +259,7 @@ class DmBuilder extends Builder
      * @param  string  $reference
      * @return array
      */
-    protected function parseSchemaAndTable($reference)
+    public function parseSchemaAndTable($reference, $withDefaultSchema = null)
     {
         $parts = explode('.', $reference);
 

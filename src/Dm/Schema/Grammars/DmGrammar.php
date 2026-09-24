@@ -2,7 +2,6 @@
 
 namespace LaravelDm\Dm\Schema\Grammars;
 
-use Illuminate\Database\Connection;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Database\Schema\Grammars\Grammar;
 use Illuminate\Support\Fluent;
@@ -66,9 +65,9 @@ class DmGrammar extends Grammar
      * @param  mixed  $table
      * @return string
      */
-    public function wrapTable($table)
+    public function wrapTable($table, $prefix = null)
     {
-        return $this->getSchemaPrefix().parent::wrapTable($table);
+        return $this->getSchemaPrefix().parent::wrapTable($table, $prefix);
     }
 
     /**
@@ -197,8 +196,15 @@ class DmGrammar extends Grammar
      * @param  int  $tableID
      * @return string
      */
-    public function compileColumns($schema, $table, $tableID)
+    public function compileColumns($schema, $table, $tableID = null)
     {
+        // Laravel 11+ 只传 schema/table，这里补查表 ID
+        if ($tableID === null && isset($this->connection)) {
+            $tableID = $this->connection->selectFromWriteConnection(
+                $this->compileTableId($schema, $table)
+            );
+        }
+
         return sprintf(
             'SELECT NAME, COLID, TYPE$ AS TYPE_NAME, LENGTH$ AS LENGTH, SCALE, NULLABLE$ AS NULLABLE, DEFVAL,(SELECT DISTINCT CYT_NAME FROM SYS.V$CIPHERS WHERE TRUE AND CYT_ID = (SELECT ENC_ID FROM SYSCOLCYT WHERE TID = COL.ID AND CID = COL.COLID)) ENC_NAME,(SELECT ENC_TYPE FROM SYSCOLCYT WHERE TID = COL.ID  AND CID = COL.COLID) ENC_TYPE,(SELECT DISTINCT CYT_NAME FROM SYS.V$CIPHERS WHERE TRUE AND CYT_ID = (SELECT HASH_ID FROM SYSCOLCYT WHERE TID = COL.ID  AND CID = COL.COLID)) HASH_NAME,(SELECT HASH_TYPE FROM SYSCOLCYT WHERE TID = COL.ID  AND CID = COL.COLID) HASH_TYPE, (SELECT CIPHER FROM SYSCOLCYT WHERE TID = COL.ID  AND CID = COL.COLID) CIPHER, (SELECT INFO1 FROM SYSCOLINFOS WHERE ID = COL.ID AND COLID = COL.COLID) VIR_COL, INFO1, (SELECT COMMENT$ FROM SYSCOLUMNCOMMENTS WHERE SCHNAME=%s AND TVNAME=%s AND COLNAME=COL.NAME AND TABLE_TYPE=\'TABLE\') COL_COMMENT FROM (SELECT A.NAME,A.ID,A.COLID, CASE WHEN B.INFO1 IS NULL OR (((B.INFO1>>2) & 0X01)=0 AND ((B.INFO1>>3) & 0X01)=0) THEN A.TYPE$ WHEN (B.INFO2 & 0XFF) = 0 THEN \'NUMBER\' WHEN ((B.INFO1>>3) & 0X01)=1 THEN \'DATE\' ELSE \'FLOAT\' END AS TYPE$,  CASE WHEN B.INFO1 IS NULL OR ((B.INFO1>>2) & 0X01)=0 THEN A.SCALE WHEN (B.INFO2 & 0XFF) = 0 THEN 0 ELSE 129 END AS SCALE,   CASE WHEN B.INFO1 IS NULL OR ((B.INFO1>>2) & 0X01)=0 THEN A.LENGTH$ ELSE (B.INFO2 & 0XFF) END AS LENGTH$,A.NULLABLE$,A.DEFVAL,A.INFO1,A.INFO2 FROM SYSCOLUMNS A LEFT JOIN SYSCOLINFOS B ON A.ID=B.ID AND A.COLID=B.COLID  WHERE A.ID =%d) COL;',
             $this->quoteString($schema),
@@ -241,8 +247,19 @@ class DmGrammar extends Grammar
      * @param  int  $schemaId
      * @return string
      */
-    public function compileTables($schema, $schemaId)
+    public function compileTables($schema, $schemaId = null)
     {
+        // Laravel 11+ 只传 schema，这里补查 schema ID
+        if ($schemaId === null && isset($this->connection)) {
+            $schemaId = $this->connection->selectFromWriteConnection(
+                $this->compileSchemaId($schema)
+            )[0] ?? null;
+        }
+
+        if ($schemaId === null) {
+            return 'select 1 from SYSOBJECTS where 1 = 0';
+        }
+
         return 'select TABLE_USED_PAGES(\''.$schema.'\', tab_obj_out.NAME)*PAGE TABLE_USED,tab_obj_out.*, comment_obj.comment$ as COMMENTS from
         (select  TAB_OBJ.NAME, TAB_OBJ.ID, TAB_OBJ.SUBTYPE$, TAB_OBJ.INFO3, TAB_OBJ.SCHID, SCH_OBJ.NAME SCHNAME, TAB_OBJ.CRTDATE, INFO8, TAB_OBJ.INFO2*(PAGE/1024)/1024, TAB_OBJ.INFO1, TAB_OBJ.INFO6 from (select TAB_OBJ_INNER.NAME, TAB_OBJ_INNER.ID, TAB_OBJ_INNER.SUBTYPE$, TAB_OBJ_INNER.INFO1, TAB_OBJ_INNER.INFO2, TAB_OBJ_INNER.INFO3, TAB_OBJ_INNER.INFO6, TAB_OBJ_INNER.INFO8, TAB_OBJ_INNER.SCHID, TAB_OBJ_INNER.CRTDATE from SYSOBJECTS TAB_OBJ_INNER , SYSOBJECTS SCH_OBJ_INNER, SYSOBJECTS USER_OBJ_INNER where TAB_OBJ_INNER.type$ = \'SCHOBJ\'  and TAB_OBJ_INNER.INFO3&0x100000!=0x100000 and TAB_OBJ_INNER.INFO3&0x200000!=0x200000 and TAB_OBJ_INNER.INFO3 & 0x003F not in (0x0A, 0x20) and (TAB_OBJ_INNER.INFO3 & 0x100000000) = 0  and TAB_OBJ_INNER.NAME not like \'CTI$%$_\' and TAB_OBJ_INNER.NAME not like \'%$AUX\' and TAB_OBJ_INNER.NAME not like \'%$_AUX\' and TAB_OBJ_INNER.NAME not like \'%$ALOG\' and TAB_OBJ_INNER.NAME not like \'BIN$%\' and TAB_OBJ_INNER.SUBTYPE$ = \'UTAB\' and (TAB_OBJ_INNER.PID=-1 or TAB_OBJ_INNER.PID=0) and TAB_OBJ_INNER.INFO3 & 0x003F != 13 and TAB_OBJ_INNER.SCHID = '.$schemaId->ID.' and USER_OBJ_INNER.SUBTYPE$ = \'USER\' and SCH_OBJ_INNER.ID = TAB_OBJ_INNER.SCHID and SCH_OBJ_INNER.PID = USER_OBJ_INNER.ID and SF_CHECK_PRIV_OPT(UID(), CURRENT_USERTYPE(), TAB_OBJ_INNER.ID, USER_OBJ_INNER.ID, USER_OBJ_INNER.INFO1, TAB_OBJ_INNER.ID) = 1) TAB_OBJ, (select ID, NAME from SYSOBJECTS where TYPE$=\'SCH\' and  ID = '.$schemaId->ID.') SCH_OBJ where TAB_OBJ.SCHID=SCH_OBJ.ID ) TAB_OBJ_OUT LEFT JOIN SYSTABLECOMMENTS COMMENT_OBJ ON TAB_OBJ_OUT.NAME = COMMENT_OBJ.TVNAME AND TAB_OBJ_OUT.SCHNAME = COMMENT_OBJ.SCHNAME order by TAB_OBJ_OUT.NAME;
         ';
@@ -506,10 +523,9 @@ class DmGrammar extends Grammar
      *
      * @param  \Illuminate\Database\Schema\Blueprint  $blueprint
      * @param  \Illuminate\Support\Fluent  $command
-     * @param  \Illuminate\Database\Connection  $connection
      * @return array
      */
-    public function compileRenameColumn(Blueprint $blueprint, Fluent $command, Connection $connection)
+    public function compileRenameColumn(Blueprint $blueprint, Fluent $command)
     {
         $table = $this->wrapTable($blueprint);
 
@@ -539,12 +555,11 @@ class DmGrammar extends Grammar
      *
      * @param  \Illuminate\Database\Schema\Blueprint  $blueprint
      * @param  \Illuminate\Support\Fluent  $command
-     * @param  \Illuminate\Database\Connection  $connection
      * @return array|string
      *
      * @throws \RuntimeException
      */
-    public function compileChange(Blueprint $blueprint, Fluent $command, Connection $connection)
+    public function compileChange(Blueprint $blueprint, Fluent $command)
     {
         $column = $command->column;
 

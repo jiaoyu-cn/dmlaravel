@@ -21,23 +21,6 @@ class DmBlueprint extends Blueprint
     public $commentColumns = [];
 
     /**
-     * Database prefix variable.
-     *
-     * @var string
-     */
-    protected $prefix;
-
-    /**
-     * Set table prefix settings.
-     *
-     * @param  string  $prefix
-     */
-    public function setTablePrefix($prefix = '')
-    {
-        $this->prefix = $prefix;
-    }
-
-    /**
      * Create a default index name for the table.
      *
      * @param  string  $type
@@ -54,7 +37,7 @@ class DmBlueprint extends Blueprint
 
         $type = isset($short_type[$type]) ? $short_type[$type] : $type;
 
-        $index = strtolower($this->prefix.$this->table.'_'.implode('_', $columns).'_'.$type);
+        $index = strtolower($this->connection->getTablePrefix().$this->table.'_'.implode('_', $columns).'_'.$type);
 
         $index = str_replace(['-', '.'], '_', $index);
 
